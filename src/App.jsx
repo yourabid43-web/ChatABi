@@ -1,14 +1,16 @@
 import { useState, useEffect, useRef } from 'react'
 import './App.css'
+import { auth, googleProvider } from './firebase'
+import {
+  onAuthStateChanged,
+  signInWithPopup,
+  signOut
+} from 'firebase/auth'
 
 function App() {
-  const [chats, setChats] = useState(() => {
-    try {
-      return JSON.parse(localStorage.getItem('chatabi_chats')) || []
-    } catch {
-      return []
-    }
-  })
+  const [user, setUser] = useState(null)
+  const [authLoading, setAuthLoading] = useState(true)
+  const [chats, setChats] = useState([])
 
   const [activeId, setActiveId] = useState(null)
   const [message, setMessage] = useState('')
@@ -26,8 +28,53 @@ function App() {
   const fileRef = useRef(null)
 
   useEffect(() => {
-    localStorage.setItem('chatabi_chats', JSON.stringify(chats))
-  }, [chats])
+    const unsubscribe = onAuthStateChanged(auth, currentUser => {
+      setUser(currentUser)
+
+      if (currentUser) {
+        try {
+          const saved = localStorage.getItem(
+            `chatabi_chats_${currentUser.uid}`
+          )
+          setChats(saved ? JSON.parse(saved) : [])
+        } catch {
+          setChats([])
+        }
+      } else {
+        setChats([])
+      }
+
+      setAuthLoading(false)
+    })
+
+    return unsubscribe
+  }, [])
+
+  useEffect(() => {
+    if (user && !authLoading) {
+      localStorage.setItem(
+        `chatabi_chats_${user.uid}`,
+        JSON.stringify(chats)
+      )
+    }
+  }, [chats, user, authLoading])
+
+  async function loginWithGoogle() {
+    try {
+      await signInWithPopup(auth, googleProvider)
+    } catch (error) {
+      alert('Google Login Error: ' + error.message)
+    }
+  }
+
+  async function logout() {
+    try {
+      stopSpeaking()
+      await signOut(auth)
+    } catch (error) {
+      alert('Logout Error: ' + error.message)
+    }
+  }
 
   const activeChat = chats.find(c => c.id === activeId)
   const messages = activeChat?.messages || []
@@ -205,6 +252,57 @@ function App() {
     if (activeId === id) setActiveId(null)
   }
 
+  if (authLoading) {
+    return (
+      <div style={{ minHeight: '100vh', display: 'grid', placeItems: 'center' }}>
+        <h2>ChatABi is loading...</h2>
+      </div>
+    )
+  }
+
+  if (!user) {
+    return (
+      <div style={{
+        minHeight: '100vh',
+        display: 'grid',
+        placeItems: 'center',
+        background: '#101018',
+        color: 'white',
+        padding: '20px'
+      }}>
+        <div style={{
+          width: '100%',
+          maxWidth: '380px',
+          textAlign: 'center',
+          padding: '30px 20px',
+          borderRadius: '18px',
+          background: '#1d1d29'
+        }}>
+          <div style={{ fontSize: '52px' }}>🤖</div>
+          <h1>Welcome to ChatABi</h1>
+          <p>Sign in with Google to start chatting.</p>
+          <button
+            onClick={loginWithGoogle}
+            style={{
+              width: '100%',
+              padding: '14px',
+              marginTop: '18px',
+              border: 'none',
+              borderRadius: '10px',
+              background: 'white',
+              color: '#222',
+              fontSize: '16px',
+              fontWeight: 'bold',
+              cursor: 'pointer'
+            }}
+          >
+            Continue with Google
+          </button>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="app">
       <aside className="sidebar">
@@ -245,6 +343,12 @@ function App() {
         <header className="header">
           <h2>ChatABi</h2>
           <span className="online">● Online</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span style={{ fontSize: '12px' }}>
+              {user.displayName || user.email}
+            </span>
+            <button onClick={logout}>Logout</button>
+          </div>
         </header>
 
         <section className="chat">
